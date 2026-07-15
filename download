@@ -1,0 +1,15 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor folders
+.vscode/
+.idea/
+
+# Backup/temp files people's editors leave behind
+*.bak
+*.tmp
+*~
+
+# Workshop upload artifacts, if you ever use gmpublish
+*.gma
