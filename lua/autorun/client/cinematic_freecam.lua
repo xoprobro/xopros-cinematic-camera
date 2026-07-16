@@ -1,9 +1,6 @@
 if CLIENT then
 
-    ------------------------------------------------------------
-    -- STATE
-    ------------------------------------------------------------
-
+    -- all the camera state lives up here
     local freeCam = false
     local camMode = "free" -- free, topdown, shoulder, orbit, path, static, chase, front, crane, dollyzoom, bonecam
 
@@ -13,7 +10,7 @@ if CLIENT then
 
     local camSpeed = 200
     local camRotSpeed = 90
-    local smoothSpeed = 6
+    local smoothSpeed = 6 -- bigger = snappier, smaller = floatier
 
     local curOrigin = Vector(0, 0, 0)
     local curAngles = Angle(0, 0, 0)
@@ -38,6 +35,7 @@ if CLIENT then
 
     local slowMoOrbit = false
 
+    -- afk stuff, kicks in when you havent touched anything in a while
     local afkEnabled = false
     local afkTimeout = 20
     local afkIdleTime = 0
@@ -62,6 +60,7 @@ if CLIENT then
 
     local boneCamIndex = nil
 
+    -- old waypoint path system, not really used in the menu anymore but leaving the code in
     local waypoints = {}
     local MAX_WAYPOINTS = 20
     local pathPlaying = false
@@ -86,6 +85,7 @@ if CLIENT then
         drone = true, hero = true, sidescroll = true
     }
 
+    -- these offsets are honestly just eyeballed, took a while to get them not clipping
     local BODY_PARTS = {
         { label = "Head",       keys = { "head" },                       offset = Vector(2, 0, 10) },
         { label = "Chest",      keys = { "spine2", "chest", "spine1" },   offset = Vector(20, 0, 8) },
@@ -99,6 +99,7 @@ if CLIENT then
 
     local boneCamOffset = Vector(0, 0, 0)
 
+    -- searches bone names for a keyword since every model names bones a bit differently
     local function FindBoneByKeywords(ply, keys)
         if not IsValid(ply) then return nil end
         local count = ply:GetBoneCount() or 0
@@ -125,6 +126,7 @@ if CLIENT then
             return ent:GetPos() + Vector(0, 0, 40)
         end
 
+        -- not every entity has WorldSpaceCenter so just fall back if it errors
         local ok, center = pcall(function() return ent:WorldSpaceCenter() end)
         if ok and center then return center end
 
@@ -178,10 +180,8 @@ if CLIENT then
         print("Cinematic Cam AFK: " .. (#candidates - 1) .. " other candidates found, watching " .. pickedDesc)
     end
 
-    ------------------------------------------------------------
-    -- NAV MESH PATHFINDING (A* over CNavArea graph)
-    ------------------------------------------------------------
-
+    -- basic A* over the nav mesh, mostly copy-pasted the idea from how pathfinding
+    -- usually works and adapted it for CNavArea. not the fastest but it works
     local function ComputeNavPath(startPos, endPos)
         if not navmesh then return nil end
 
@@ -199,7 +199,7 @@ if CLIENT then
         local fScore = { [startArea] = startArea:GetCenter():Distance(endArea:GetCenter()) }
 
         local iterations = 0
-        local MAX_ITERATIONS = 1500
+        local MAX_ITERATIONS = 1500 -- just a safety net so it can't hang forever
 
         while next(openSet) do
             iterations = iterations + 1
@@ -245,10 +245,6 @@ if CLIENT then
         return nil
     end
 
-    ------------------------------------------------------------
-    -- BUILD PLAYBACK SEGMENTS (runs once when Play Path starts)
-    ------------------------------------------------------------
-
     local function BuildPlaybackSegments()
         playbackSegments = {}
 
@@ -284,9 +280,7 @@ if CLIENT then
         end
     end
 
-    ------------------------------------------------------------
-    -- CONCOMMANDS
-    ------------------------------------------------------------
+    -- console commands, the menu buttons just call these
 
     concommand.Add("cin_freecam_toggle", function()
         freeCam = not freeCam
@@ -425,10 +419,8 @@ if CLIENT then
         pathElapsed = 0
     end)
 
-    ------------------------------------------------------------
-    -- INPUT (free + dolly zoom movement, arrow keys)
-    ------------------------------------------------------------
-
+    -- arrow key input, works for free cam and dolly zoom since those are the
+    -- only two modes where you actually drive the position yourself
     hook.Add("Think", "CinematicCam_Input", function()
         if not freeCam then return end
         if camMode ~= "free" and camMode ~= "dollyzoom" then return end
@@ -450,7 +442,7 @@ if CLIENT then
                 if input.IsKeyDown(KEY_RIGHT) then camPos = camPos + camAng:Right()  * camSpeed * ft end
             end
         else
-            -- dolly zoom: movement only, angle is auto-aimed at the player elsewhere
+            -- dolly zoom just moves, the angle gets aimed at the player down in GetTargetView
             if input.IsKeyDown(KEY_UP)    then camPos = camPos + camAng:Forward() * camSpeed * ft end
             if input.IsKeyDown(KEY_DOWN)  then camPos = camPos - camAng:Forward() * camSpeed * ft end
             if input.IsKeyDown(KEY_LEFT)  then camPos = camPos - camAng:Right()   * camSpeed * ft end
@@ -463,19 +455,13 @@ if CLIENT then
         camAng.p = math.Clamp(camAng.p, -89, 89)
     end)
 
-    ------------------------------------------------------------
-    -- ORBIT MODE UPDATE
-    ------------------------------------------------------------
-
     hook.Add("Think", "CinematicCam_Orbit", function()
         if not freeCam or camMode ~= "orbit" then return end
         orbitAngle = (orbitAngle + orbitSpeed * FrameTime()) % 360
     end)
 
-    ------------------------------------------------------------
-    -- AFK CAM (GTA-style idle takeover)
-    ------------------------------------------------------------
-
+    -- afk detection, checks your actual position/angle instead of raw input
+    -- because just watching keys was getting false triggers for some reason
     local afkLastPos = nil
     local afkLastAng = nil
 
@@ -522,10 +508,6 @@ if CLIENT then
             end
         end
     end)
-
-    ------------------------------------------------------------
-    -- WAYPOINT PATH PLAYBACK
-    ------------------------------------------------------------
 
     hook.Add("Think", "CinematicCam_PathPlayback", function()
         if not pathPlaying or camMode ~= "path" then return end
@@ -582,10 +564,8 @@ if CLIENT then
         end
     end)
 
-    ------------------------------------------------------------
-    -- VIEW TARGET PER MODE
-    ------------------------------------------------------------
-
+    -- this is basically the big switch statement that decides where the
+    -- camera actually goes depending on which mode you picked
     local function GetTargetView(ply)
         if camMode == "topdown" then
             local target = ply:GetPos() + Vector(0, 0, 40)
@@ -625,13 +605,13 @@ if CLIENT then
         elseif camMode == "drone" then
             local eyeAng = ply:EyeAngles()
             local speed = ply:GetVelocity():Length()
-            local dist = 120 + math.Clamp(speed * 0.4, 0, 150)
+            local dist = 120 + math.Clamp(speed * 0.4, 0, 150) -- pulls back further the faster you go
             local origin = ply:GetPos() + Vector(0, 0, 90) - eyeAng:Forward() * dist
 
             dronePrevYaw = dronePrevYaw or eyeAng.y
             local yawDelta = math.AngleDifference(eyeAng.y, dronePrevYaw)
             dronePrevYaw = eyeAng.y
-            local bank = math.Clamp(-yawDelta * 4, -25, 25)
+            local bank = math.Clamp(-yawDelta * 4, -25, 25) -- fake banking when you turn
 
             local lookAt = ply:GetPos() + Vector(0, 0, 40)
             local ang = (lookAt - origin):Angle()
@@ -664,6 +644,7 @@ if CLIENT then
                 dollyInitialized = true
             end
 
+            -- keeps the player the same apparent size while distance changes, aka the vertigo effect
             local halfRad = math.rad(dollyRefFOV / 2)
             local fov = math.deg(2 * math.atan((dollyRefDistance * math.tan(halfRad)) / distance))
             fov = math.Clamp(fov, 5, 170)
@@ -672,7 +653,7 @@ if CLIENT then
 
         elseif camMode == "bonecam" then
             if boneCamIndex and IsValid(ply) then
-                ply:SetupBones() -- force current-frame bone positions instead of last frame's
+                ply:SetupBones() -- without this it lags a frame behind during movement
                 local pos = ply:GetBonePosition(boneCamIndex)
                 if pos then
                     local eyeAng = ply:EyeAngles()
@@ -685,13 +666,9 @@ if CLIENT then
             return ply:EyePos(), ply:EyeAngles(), camFOV
         end
 
-        -- "free", "static", "path" all just use the stored camPos/camAng/camFOV directly
+        -- free/static/path all just use whatever camPos/camAng currently is
         return camPos, camAng, camFOV
     end
-
-    ------------------------------------------------------------
-    -- SMOOTHED CAMERA OVERRIDE
-    ------------------------------------------------------------
 
     hook.Add("CalcView", "CinematicCam_View", function(ply, pos, ang, fov)
         if not freeCam then
@@ -728,7 +705,7 @@ if CLIENT then
         local targetOrigin, targetAngles, targetFOV = GetTargetView(ply)
 
         if camMode == "bonecam" then
-            -- attached-to-body cameras should track in real time, no catch-up lag
+            -- no smoothing here on purpose, it made the body cams feel laggy when running
             curOrigin = targetOrigin
             curAngles = targetAngles
             curFOV = targetFOV
@@ -766,10 +743,6 @@ if CLIENT then
         }
     end)
 
-    ------------------------------------------------------------
-    -- CINEMATIC BLACK BARS
-    ------------------------------------------------------------
-
     hook.Add("HUDPaint", "CinematicCam_Bars", function()
         if not showBars then return end
 
@@ -779,8 +752,8 @@ if CLIENT then
         surface.DrawRect(0, ScrH() - h, ScrW(), h)
     end)
 
-    -- Keep the weapon selector alive so scroll-to-switch still works while hidden;
-    -- CHudGMod is also exempt since it's what drives our own HUDPaint hook above.
+    -- CHudWeaponSelection has to stay exempt or scroll-switching breaks while hud is hidden
+    -- (spent way too long figuring that one out)
     local HUD_HIDE_EXEMPT = {
         CHudGMod = true,
         CHudWeaponSelection = true,
@@ -790,10 +763,7 @@ if CLIENT then
         if hideHUD and not HUD_HIDE_EXEMPT[name] then return false end
     end)
 
-    ------------------------------------------------------------
-    -- C-MENU ICON / POPUP UI
-    ------------------------------------------------------------
-
+    -- menu stuff, shows up in the C menu next to the other addon icons
     list.Set("DesktopWindows", "CinematicCamWindow", {
         title = "Cinematic Cam",
         icon = "icon16/camera.png",
