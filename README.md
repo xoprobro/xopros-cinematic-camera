@@ -1,6 +1,6 @@
 # Cinematic Camera for GMod
 
-This is my first ever GMod addon so go easy on me lol. It's a free cam you can use to fly around and film cool shots without messing up your actual movement or aim. I made this because I wanted to film some machinima style stuff and got tired of the camera messing with my WASD and shooting.
+This is my first ever GMod addon so go easy on me. It's a free cam you can use to fly around and film cool shots without messing up your actual movement or aim. I made this because I wanted to film some machinima style stuff and got tired of the camera messing with my WASD and shooting.
 
 ## What it can do
 
